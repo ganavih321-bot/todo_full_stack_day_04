@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import "./App.css";
 
-const API_URL = "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 function App() {
   const [todos, setTodos] = useState([]);
@@ -9,6 +9,8 @@ function App() {
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
   const [filter, setFilter] = useState("all"); // all | active | completed
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   // Fetch all todos on mount
   useEffect(() => {
@@ -16,37 +18,68 @@ function App() {
   }, []);
 
   async function fetchTodos() {
-    const res = await fetch(`${API_URL}/todos`);
-    const data = await res.json();
-    setTodos(data);
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/todos`);
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const data = await res.json();
+      setTodos(data);
+    } catch (err) {
+      console.error("Failed to fetch todos:", err);
+      setError(`Cannot connect to backend (${API_URL}). Make sure the backend server is running.`);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function addTodo(e) {
     e.preventDefault();
     if (!newTitle.trim()) return;
-    const res = await fetch(`${API_URL}/todos`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: newTitle.trim() }),
-    });
-    const created = await res.json();
-    setTodos((prev) => [...prev, created]);
-    setNewTitle("");
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/todos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: newTitle.trim() }),
+      });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const created = await res.json();
+      setTodos((prev) => [...prev, created]);
+      setNewTitle("");
+    } catch (err) {
+      console.error("Failed to add todo:", err);
+      setError(`Failed to save task. Ensure backend is running at ${API_URL}`);
+    }
   }
 
   async function toggleComplete(todo) {
-    const res = await fetch(`${API_URL}/todos/${todo.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ completed: !todo.completed }),
-    });
-    const updated = await res.json();
-    setTodos((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/todos/${todo.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed: !todo.completed }),
+      });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const updated = await res.json();
+      setTodos((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    } catch (err) {
+      console.error("Failed to update todo:", err);
+      setError("Failed to update task.");
+    }
   }
 
   async function deleteTodo(id) {
-    await fetch(`${API_URL}/todos/${id}`, { method: "DELETE" });
-    setTodos((prev) => prev.filter((t) => t.id !== id));
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/todos/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      setTodos((prev) => prev.filter((t) => t.id !== id));
+    } catch (err) {
+      console.error("Failed to delete todo:", err);
+      setError("Failed to delete task.");
+    }
   }
 
   function startEditing(todo) {
@@ -56,15 +89,22 @@ function App() {
 
   async function saveEdit(id) {
     if (!editTitle.trim()) return;
-    const res = await fetch(`${API_URL}/todos/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: editTitle.trim() }),
-    });
-    const updated = await res.json();
-    setTodos((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-    setEditingId(null);
-    setEditTitle("");
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/todos/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: editTitle.trim() }),
+      });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const updated = await res.json();
+      setTodos((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      setEditingId(null);
+      setEditTitle("");
+    } catch (err) {
+      console.error("Failed to save edit:", err);
+      setError("Failed to save edited task.");
+    }
   }
 
   function cancelEdit() {
@@ -94,6 +134,19 @@ function App() {
           <h1>Todo App</h1>
           <p className="subtitle">Stay organized. Get things done.</p>
         </header>
+
+        {/* Error / Offline Alert */}
+        {error && (
+          <div className="error-banner">
+            <span className="error-icon">⚠️</span>
+            <div className="error-content">
+              <p className="error-text">{error}</p>
+            </div>
+            <button className="retry-btn" onClick={fetchTodos} title="Retry">
+              Retry
+            </button>
+          </div>
+        )}
 
         {/* Add Todo Form */}
         <form className="add-form" onSubmit={addTodo}>
